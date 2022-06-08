@@ -1,0 +1,1473 @@
+---
+title: "NCDB-Lung"
+author: "Panfeng"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    toc: yes
+    number_sections: yes
+---
+
+# Study Plan 
+
+I think we could perform a similar study, but address 3 clinically relevant questions. 
+
+- Given a patient with resected stage Ib or IIa lung cancer, if they have high risk feature "x", what would the prognostic impact be on their **overall survival**, compared to someone that didn’t have feature "x". 
+
+
+
+- Then what would be the potential benefit for that patient if they were to receive adjuvant chemo compared to a patient that didn’t 
+
+**(Answered in Table 2 Adjusted, Forest plot and nomogram)**
+
+- Finally, I think this would be the most influential, I’d like to develop a nomogram based on these factors to **guide their decision on whether or not to take adjuvant chemo**
+
+# Todo list
+
+1)	Table 1 comparing demographics, clinicopath, molecular features for patients with and without chemotherapy(done)
+
+2)	MV analysis to determine predictors for receipt of adjuvant chemotherapy (done)
+
+3)	Table 2 comparing patients with high risk features to those with low risk (no high risk features) all of which did not receive chemotherapy (done)
+
+4)	MV analysis to determine independent predictors of increased risk of death (done)
+
+5)	Next determine the potential benefit received with the addition of chemotherapy for each of the high risk features listed above. This may be done by comparing patients with high risk features to those with low risk (no high risk features) and performing a forest plot similar to that in Nelson paper, but will also need the HRs for any significant factors. 
+
+6)	Finally, develop a nomogram based on these high risk features to calculate a % risk reduction with the addition of chemotherapy for patients with these high risk features. (draft)
+
+7)	I think we could do subgroup analysis with those patients diagnosed in 2010-2013 as these patients could have at least 5 years survival.
+
+
+
+
+
+
+
+```{r}
+library(gtsummary)
+```
+
+# Data preparation
+
+```{r}
+NCDB_lung=read.csv("SUBSET_TEMP4.csv" )
+
+colnames(NCDB_lung)[1]="PUF_CASE_ID"
+
+```
+
+## Exclude
+
+```{r}
+sum(NCDB_lung$HISTOLOGY %in% c(8041:8045, 8240, 8241, 8243, 8244))
+```
+**Exclude these obs**
+
+```{r}
+NCDB_lung=NCDB_lung[!NCDB_lung$HISTOLOGY %in% c(8041:8045, 8240, 8241, 8243, 8244),]
+sum(NCDB_lung$HISTOLOGY %in% c(8041:8045, 8240, 8241, 8243, 8244))
+```
+
+
+
+## Create Group Variable "Chemo"
+
+**RX_SUMM_CHEMO = 1, 2, or 3 should indicate chemo. **
+
+**Also it will be equivalent to use RX_SUMM_SYSTEMIC_SUR_SEQ = 3 (surgery before chemo)**
+
+```{r}
+table(NCDB_lung$RX_SUMM_SYSTEMIC_SUR_SEQ,NCDB_lung$RX_SUMM_CHEMO)
+```
+
+
+```{r}
+NCDB_lung$Chemo=ifelse(NCDB_lung$RX_SUMM_SYSTEMIC_SUR_SEQ==3, 1, 0)
+NCDB_lung$Chemo=factor(NCDB_lung$Chemo, levels = c(1, 0), labels = c("Chemo", "No Chemo"))
+```
+
+## Rename and Collapse Some Variables
+
+### Age
+
+```{r}
+mean(NCDB_lung$AGE)
+```
+
+
+```{r}
+quantile(NCDB_lung$AGE)
+```
+```{r}
+hist(NCDB_lung$AGE, main="Histogram of AGE", xlab='AGE')
+abline(v=c(50, 60, 70, 80), col='red', lwd=2)
+
+```
+```{r}
+sum(is.na(NCDB_lung$AGE))
+sum(NCDB_lung$AGE==999)
+```
+
+
+```{r}
+NCDB_lung$AGE_cat=ifelse(NCDB_lung$AGE<50, 1, 
+                         ifelse(NCDB_lung$AGE<=60, 2,
+                                ifelse(NCDB_lung$AGE<=70, 3,
+                                       ifelse(NCDB_lung$AGE<=80, 4, 5))))
+NCDB_lung$AGE_cat=factor(NCDB_lung$AGE_cat, levels = c(1:5), 
+                         labels = c('Below 50', '50-60', '60-70', '70-80', 'Above 80'))
+table(NCDB_lung$AGE_cat)
+```
+
+
+### Tumor Size
+```{r}
+quantile(NCDB_lung$TUMOR_SIZE_NUM)
+```
+
+
+```{r}
+hist(NCDB_lung$TUMOR_SIZE_NUM, main='Histogram of Tumor Size', xlab='Tumor Size')
+abline(v=c(10, 20, 30, 40), col='red', lwd=2)
+```
+```{r}
+sum(NCDB_lung$TUMOR_SIZE_NUM==999)
+sum(NCDB_lung$TUMOR_SIZE_NUM>50)
+sum(is.na(NCDB_lung$TUMOR_SIZE_NUM))
+```
+
+
+
+```{r}
+NCDB_lung$TUMOR_SIZE_cat=ifelse(NCDB_lung$TUMOR_SIZE_NUM<=10, 1, 
+                                 ifelse(NCDB_lung$TUMOR_SIZE_NUM<=20, 2, 
+                                        ifelse(NCDB_lung$TUMOR_SIZE_NUM<=30, 3,
+                                               ifelse(NCDB_lung$TUMOR_SIZE_NUM<=40, 4, 5))))
+NCDB_lung$TUMOR_SIZE_cat=factor(NCDB_lung$TUMOR_SIZE_cat, levels = c(1, 2, 3, 4, 5), 
+                                 labels = c('<=1cm', '1cm-2cm', '2cm-3cm', '3cm-4cm', '4cm-5cm'))
+table(NCDB_lung$TUMOR_SIZE_cat)
+```
+
+### Urban/Rural
+
+```{r}
+table(NCDB_lung$UR_CD_03)
+```
+
+```{r}
+NCDB_lung$UR_CD_03_2=ifelse(NCDB_lung$UR_CD_03 %in% c(1, 2, 3), 'Metro', 
+                            ifelse(NCDB_lung$UR_CD_03 %in% c(4, 5, 6, 7), 'Urban', 
+                                   ifelse(NCDB_lung$UR_CD_03 %in% c(8, 9), 'Rural', 'Unknown')))
+table(NCDB_lung$UR_CD_03_2)
+```
+
+
+```{r}
+NCDB_lung$UR_CD_13_2=ifelse(NCDB_lung$UR_CD_13 %in% c(1, 2, 3), 'Metro', 
+                            ifelse(NCDB_lung$UR_CD_13 %in% c(4, 5, 6, 7), 'Urban', 
+                                   ifelse(NCDB_lung$UR_CD_13 %in% c(8, 9), 'Rural', 'Unknown')))
+table(NCDB_lung$UR_CD_13_2)
+
+```
+
+### Race
+
+```{r}
+table(NCDB_lung$RACE)
+```
+
+
+```{r}
+NCDB_lung$RACE2=ifelse(NCDB_lung$RACE==1, 'White',
+                       ifelse(NCDB_lung$RACE==2, 'Black',
+                              ifelse(NCDB_lung$RACE==99, 'Unknown',
+                                     'Other')))
+table(NCDB_lung$RACE2)
+
+```
+
+```{r}
+table(NCDB_lung$SPANISH_HISPANIC_ORIGIN)
+```
+
+
+```{r}
+NCDB_lung$'SPANISH_ORIGIN2'=ifelse(NCDB_lung$SPANISH_HISPANIC_ORIGIN==0, 'Non-Hispanic',
+                                   ifelse(NCDB_lung$SPANISH_HISPANIC_ORIGIN==9, 'Unkown', 'Hispanic'))
+table(NCDB_lung$'SPANISH_ORIGIN2')
+```
+
+
+
+### Squamous vs. Adenocarcinoma 
+
+```{r}
+table(NCDB_lung$HISTOLOGY)
+```
+**There is no fifth digit in histology**
+
+```{r}
+NCDB_lung$Pathology=ifelse(NCDB_lung$HISTOLOGY %in% c(8070:8079), 'Squamous',
+                           ifelse(NCDB_lung$HISTOLOGY %in% c(8140:8149, 8250:8259,8260-8269 ,8480:8489, 8570:8579, 8310, 8333), 'Adenocarcinoma', 'Other'))
+
+NCDB_lung$Pathology=factor(NCDB_lung$Pathology, levels = c('Squamous', 'Adenocarcinoma','Other'))
+table(NCDB_lung$Pathology)
+```
+
+
+### Neuroendocrine
+
+```{r}
+NCDB_lung$Neuroendocrine =ifelse(NCDB_lung$HISTOLOGY %in% c(8242, 8245, 8246, 8249, 8013), 'Neuroendocrine', 'Other')
+table(NCDB_lung$Neuroendocrine)
+```
+```{r}
+NCDB_lung$Neuroendocrine=factor(NCDB_lung$Neuroendocrine, levels = c("Other", "Neuroendocrine"))
+table(NCDB_lung$Neuroendocrine)
+```
+
+
+### Visceral pleural invasion
+
+```{r}
+NCDB_lung$Visceral_Pleural_Invasion=ifelse(NCDB_lung$CS_SITESPECIFIC_FACTOR_2 %in% c(10, 20), 'Present',
+                                           'Other')
+
+```
+
+** There are NO Visceral pleural invasion in Tumor size below 3cm
+
+```{r}
+table(NCDB_lung$TUMOR_SIZE_cat, NCDB_lung$Visceral_Pleural_Invasion)
+```
+
+
+### Positive Margins
+
+```{r}
+table(NCDB_lung$RX_SUMM_SURGICAL_MARGINS )
+```
+
+
+```{r}
+NCDB_lung$Margins=ifelse(NCDB_lung$RX_SUMM_SURGICAL_MARGINS %in% c(1, 2, 3), 'Positive',
+                         ifelse(NCDB_lung$RX_SUMM_SURGICAL_MARGINS==0, 'Zero', 'Other'))
+NCDB_lung$Margins=factor(NCDB_lung$Margins, levels = c('Zero', 'Positive', 'Other'))
+table(NCDB_lung$Margins)
+```
+
+### <10 lymph nodes sampled
+
+```{r}
+table(NCDB_lung$REGIONAL_NODES_EXAMINED)
+```
+```{r}
+NCDB_lung$Lymph_Nodes_Sampled =ifelse(NCDB_lung$REGIONAL_NODES_EXAMINED<10, '<10', ifelse(NCDB_lung$REGIONAL_NODES_EXAMINED %in% c(95, 96, 97, 98 ), 'Unknown', '>=10'))
+
+table(NCDB_lung$Lymph_Nodes_Sampled)
+```
+
+### Excision or resection of less than one lobe
+
+```{r}
+NCDB_lung$Excision_less_than1=ifelse(NCDB_lung$RX_SUMM_SURG_PRIM_SITE %in% c(20:25), TRUE, FALSE)
+NCDB_lung$Excision_less_than1=factor(NCDB_lung$Excision_less_than1, levels = c(TRUE, FALSE))
+table(NCDB_lung$Excision_less_than1)
+```
+
+### Local tumor destruction
+
+NO local turmor destruction!
+
+```{r}
+table(NCDB_lung$RX_SUMM_SURG_PRIM_SITE)
+```
+
+
+```{r}
+NCDB_lung$Local_Tumor_Destruction=ifelse(NCDB_lung$RX_SUMM_SURG_PRIM_SITE %in% c(12, 13, 15), TRUE, FALSE)
+table(NCDB_lung$Local_Tumor_Destruction)
+```
+
+## label levels in those factors
+
+```{r}
+NCDB_lung$INSURANCE_STATUS=factor(NCDB_lung$INSURANCE_STATUS, levels=c(0, 1, 2, 3, 4, 9), labels = c("Not Insured", "Private", "Medicaid", "Medicare","Other Government", "Unknown"))
+NCDB_lung$SEX=factor(NCDB_lung$SEX, levels = c(1, 2), labels = c("Male", "Female"))
+NCDB_lung$RACE2=factor(NCDB_lung$RACE2, levels = c("White", "Black", "Other", "Unknown"))
+NCDB_lung$MED_INC_QUAR_00=factor(NCDB_lung$MED_INC_QUAR_00, levels = c(1, 2, 3, 4), labels = c("< $30,000", "$30,000 - $34,999", "$35,000 - $45,999", ">=$46,000"))
+NCDB_lung$MED_INC_QUAR_12=factor(NCDB_lung$MED_INC_QUAR_12, levels = c(1, 2, 3, 4), labels = c("< $38,000", "$38,000 - $47,999", "$48,000 - $62,999", ">=$63,000"))
+NCDB_lung$NO_HSD_QUAR_00=factor(NCDB_lung$NO_HSD_QUAR_00, levels = c(1, 2, 3, 4), labels = c(">=29.0%", "20.0% - 28.9%", "14.0%-19.9%", "< 14.0%"))
+NCDB_lung$NO_HSD_QUAR_12=factor(NCDB_lung$NO_HSD_QUAR_12, levels = c(1, 2, 3, 4), labels = c(">=21.0%", "13.0% - 20.9%", "7.0%-12.9%", "< 7.0%"))
+NCDB_lung$UR_CD_03_2=factor(NCDB_lung$UR_CD_03_2, levels = c("Metro", "Urban", "Rural"))
+NCDB_lung$UR_CD_13_2=factor(NCDB_lung$UR_CD_13_2, levels = c("Metro", "Urban", "Rural"))
+
+NCDB_lung$GRADE=factor(NCDB_lung$GRADE, levels = c(1, 2, 3, 4, 9), labels = c("Well differentiated", "Moderately differentiated", "Poorly differentiated", "Undifferentiated", "Unknown"))
+
+NCDB_lung$LYMPH_VASCULAR_INVASION=factor(NCDB_lung$LYMPH_VASCULAR_INVASION, levels = c(0, 1, 8, 9), labels = c("Absent", "Present", "Not applicable", "Unknown"))
+
+
+
+#NCDB_lung$RX_SUMM_SURGICAL_MARGINS=factor(NCDB_lung$RX_SUMM_SURGICAL_MARGINS, levels = c(0, 1, 2, 3, 7, 9), labels = c("No residual tumor", "Residual tumor", "Microscopic residual tumor", "Macroscopic residual tumor", "Margins not evaluable", "Unknown"))
+```
+
+**Remove empty category of LYMPH_VASCULAR_INVASION**
+
+```{r}
+NCDB_lung$LYMPH_VASCULAR_INVASION2=factor(NCDB_lung$LYMPH_VASCULAR_INVASION, levels = c("Absent", "Present",  "Unknown"), labels = c("Absent", "Present",  "Unknown"))
+table(NCDB_lung$LYMPH_VASCULAR_INVASION2)
+```
+
+# Table 1 
+
+Comparing demographics, clinicopath, molecular features for patients with and without chemotherapy
+
+
+## Table 1
+
+```{r}
+# the order in this vector influences the order of variables showing up in the table
+include_columns = c(
+  "YEAR_OF_DIAGNOSIS",
+  "AGE_cat",
+  "SEX" ,
+  "RACE2",
+  "SPANISH_ORIGIN2",
+  "INSURANCE_STATUS" ,
+  "MED_INC_QUAR_00",
+  "NO_HSD_QUAR_00",
+  "UR_CD_03_2",
+  "MED_INC_QUAR_12",
+  "NO_HSD_QUAR_12",
+  "UR_CD_13_2",
+  "CROWFLY",
+  "CDCC_TOTAL_BEST",
+  "TUMOR_SIZE_cat",
+  "GRADE",
+  "Pathology",
+  "Neuroendocrine",
+  "Visceral_Pleural_Invasion",
+  "LYMPH_VASCULAR_INVASION2" ,
+  "Margins",
+  "Lymph_Nodes_Sampled",
+  "Excision_less_than1",
+  "Chemo"
+)
+
+
+relabel_columns=list(YEAR_OF_DIAGNOSIS ~'Year',
+                      AGE_cat ~ 'Age', 
+                     SEX ~ 'Gender',
+                     RACE2 ~ 'Race',
+                     SPANISH_ORIGIN2~ 'Spanish Origin',
+                     INSURANCE_STATUS~ 'Insurance Status', 
+                     MED_INC_QUAR_00 ~ 'Median Income Quartiles',
+                     NO_HSD_QUAR_00 ~ 'No High School Degree',
+                     MED_INC_QUAR_12 ~ 'Median Income Quartiles 2012',
+                     NO_HSD_QUAR_12 ~ 'No High School Degree 2012',
+                     UR_CD_03_2 ~ 'Urban/Rural',
+                     UR_CD_13_2 ~ 'Urban/Rural 2013',
+                     CROWFLY ~ 'Great Circle Distance',
+                     CDCC_TOTAL_BEST ~ 'Charlson-Deyo Score',
+                     TUMOR_SIZE_cat ~ 'Tumor Size',
+                     LYMPH_VASCULAR_INVASION2 ~ 'Vascular Invasion',
+                     Lymph_Nodes_Sampled ~ 'Lymph nodes sampled ',
+                     Excision_less_than1='Excision/Resection of <1 lobe ',
+                     Visceral_Pleural_Invasion~'Visceral Pleural Invasion')
+
+```
+
+
+# Data check table 1
+
+```{r}
+
+library(finalfit)
+library(summarytools)
+#check summary stats and distributions 
+NCDB_lung[,include_columns] %>% dfSummary()
+NCDB_lung[,include_columns] %>% missing_plot()
+
+```
+
+
+
+# Create Tables
+```{r}
+#define new fisher sim test
+fisher.test.simulate.p.values <- function(data, variable, by, ...) {
+  result <- list()
+  test_results <- stats::fisher.test(data[[variable]], data[[by]], simulate.p.value = TRUE)
+  result$p <- test_results$p.value
+  result$test <- test_results$method
+  return(result)
+}
+
+table1 <-NCDB_lung%>% tbl_summary( by=Chemo, missing='no',
+                                        statistic = list(all_continuous() ~ "{mean} ({sd})"),
+                                        label = relabel_columns, include=all_of(include_columns))%>%
+  add_p(test = list(all_categorical() ~ "fisher.test.simulate.p.values") )%>%
+  bold_labels()
+
+table1  %>% 
+  as_flex_table()%>%flextable::save_as_docx(., path = "table1.docx")
+table1
+```
+
+
+# Predictors for receipt of adjuvant chemotherapy
+
+From Table 1, we can see variables correlated to Chemotherapy receipt are
+
+- Age
+- Insurance Status
+- Charlson-Deyo Score
+- Tumor Size 
+- Grade
+- Neuroendocrine
+- Visceral Pleural Invasion
+- Vascular Invasion
+- Margins
+- Lymph nodes sampled 
+- Excision_less_than1
+
+Pathology is not significant in Table 1, but let's include it by so far.
+
+We do logistic regression with receipt of chemotherapy as response and the variables above as predictors.
+
+
+```{r}
+NCDB_lung$Chemo2=ifelse(NCDB_lung$Chemo=='Chemo', 1, 0); # since Chemo is already factorized
+
+table(NCDB_lung$Chemo, NCDB_lung$Chemo2)
+```
+
+
+```{r}
+NCDB_lung$CDCC_TOTAL_BEST=as.factor(NCDB_lung$CDCC_TOTAL_BEST)
+fit1=glm(Chemo2~AGE_cat+
+  INSURANCE_STATUS+
+  CDCC_TOTAL_BEST+
+  TUMOR_SIZE_cat+
+  GRADE+
+  Pathology+
+  Neuroendocrine+
+  Visceral_Pleural_Invasion+
+  LYMPH_VASCULAR_INVASION2+
+  Margins+
+  Lymph_Nodes_Sampled+
+  Excision_less_than1, data=NCDB_lung, family = binomial)
+summary(fit1)
+```
+
+## Backward variable selection
+
+```{r}
+backward=step(fit1, direction = "backward")
+```
+
+
+## Forward variable selection
+```{r}
+fit0=glm(Chemo~ 1, data = NCDB_lung, family = binomial(link="logit"))
+forward=step(fit0, scope=list(lower=formula(fit0),upper=formula(fit1)), direction="forward")
+```
+
+
+```{r}
+backward$formula
+```
+
+```{r}
+forward$formula
+```
+**We can see we get the same results in backward and forward variable selection**
+
+```{r}
+fit1_final=backward
+```
+
+
+## Interpret Result
+
+```{r}
+summary(fit1_final)
+```
+
+
+
+
+## Diagnosis
+
+```{r}
+library(LogisticDx)
+```
+
+
+
+
+### Influential Obs
+
+```{r}
+DX=dx(fit1_final, byCov=FALSE)
+
+```
+
+**These are difference in beta, deviance and chi-square statistic after removing each obs**
+
+```{r}
+hist(DX$dBhat, main='Histogram of dBeta')
+hist(DX$dDev, main='Histogram of dDev')
+hist(DX$dChisq, main='Histogram of dChisq')
+```
+
+
+```{r}
+plot(fit1_final, identify = TRUE, devNew = FALSE)
+
+```
+
+
+### Goodness of Fit
+
+We can see the model passed moste tests for goodness of fit.
+
+```{r}
+LogisticDx::gof(fit1_final, g=9, plotROC=TRUE)$gof
+```
+
+
+### Residual plot
+
+We can deal with outliars later.
+
+```{r}
+plot(rstandard(fit1_final, type = "pearson"), ylab="Pearson's residuals")
+```
+
+
+```{r}
+plot(rstandard(fit1_final, type = "deviance"), ylab='Standardized Deviance')
+```
+
+
+# Table 1 Adjusted
+
+TUMOR_SIZE_cat + AGE_cat + LYMPH_VASCULAR_INVASION2 + 
+    Visceral_Pleural_Invasion + GRADE + CDCC_TOTAL_BEST + Neuroendocrine + 
+    Margins + Pathology + INSURANCE_STATUS
+
+```{r}
+NCDB_lung$Chemo2=ifelse(NCDB_lung$Chemo=='Chemo', 1, 0); # since Chemo is already factorized
+
+include_columns = c(
+  'AGE_cat',
+  'TUMOR_SIZE_cat',
+  'INSURANCE_STATUS',
+  'CDCC_TOTAL_BEST',
+  'GRADE',
+  'Pathology',
+  'Neuroendocrine',
+  'Visceral_Pleural_Invasion',
+  'LYMPH_VASCULAR_INVASION2',
+  'Margins'
+)
+
+relabel_columns=list(AGE_cat ~ 'Age', 
+                     TUMOR_SIZE_cat ~ 'Tumor Size',
+                     INSURANCE_STATUS~ 'Insurance Status', 
+                     CDCC_TOTAL_BEST ~ 'Charlson-Deyo Score',
+                     GRADE~'Grade',
+                     LYMPH_VASCULAR_INVASION2 ~ 'Vascular Invasion',
+                     Visceral_Pleural_Invasion ~ 'Visceral Pleural Invasion')
+
+table1_uv=NCDB_lung[,c('Chemo2', include_columns)] %>% 
+  tbl_uvregression(
+    method = glm,
+    y = Chemo2,
+    exponentiate = TRUE,
+    label = relabel_columns
+  )%>%
+  modify_header(
+    update = list(
+      estimate ~ "**OR**"
+    )) %>%  modify_footnote(
+    update = estimate ~ 
+      "OR=Odds Ratio"
+  )
+
+table1_mv=fit1%>%tbl_regression(exponentiate = TRUE, label = relabel_columns)%>%
+  modify_header(
+    update = list(
+      estimate ~ "**OR**"
+    )) %>%  modify_footnote(
+    update = estimate ~ 
+      "OR=Odds Ratio"
+  )
+
+Table1_merge <- tbl_merge(
+  list(table1_uv, table1_mv),
+  tab_spanner = c("**Univariate analysis**", "**Multivariable analysis**")
+  ) 
+Table1_merge%>% as_flex_table()%>%flextable::save_as_docx(., path = "table1_merge.docx")
+Table1_merge
+```
+
+
+# PS Matching
+
+```{r}
+fit1_final$formula
+```
+
+
+```{r}
+library(WeightIt)
+table(NCDB_lung$Chemo)
+
+w.out <- weightit(
+  Chemo2 ~ AGE_cat +
+    INSURANCE_STATUS +
+    CDCC_TOTAL_BEST +
+    TUMOR_SIZE_cat +
+    GRADE +
+    Pathology +
+    Neuroendocrine +
+    Visceral_Pleural_Invasion +
+    LYMPH_VASCULAR_INVASION2 +
+    Margins,
+  data = NCDB_lung,
+  method = "gbm",
+  estimand = "ATT",
+  focal = 1,
+  stop.method = c("ks.mean"),
+  stabilize = TRUE
+)
+#
+summary(w.out)
+```
+
+```{r}
+library(cobalt)
+bal.tab(w.out,stats=.all)
+```
+
+```{r}
+love.plot(w.out,stats=c("m","ks"),stars="std")
+```
+```{r}
+svg("loveplot.svg")
+love.plot(w.out,stats=c("m","ks"),stars="std")
+dev.off()
+```
+## Design
+
+```{r}
+library(survey)
+NCDB_lung$w=w.out$weights
+design.mnps <- svydesign(ids=~1, weights=~w.out$weights, data=NCDB_lung)
+```
+
+
+
+# Table 2
+
+Table comparing patients with high risk features to those with low risk (no high risk features) all of which did not receive chemotherapy.
+
+Previous defined High risk includes:
+
+- tumor > 4cm
+- poorly differentiated/Undifferentiated
+- vascular invasion present
+- visceral pleural invasion present 
+- Positive margins
+- <10 lymph nodes sampled 
+-	Excision or resection of less than one lobe 
+-	Local tumor destruction (**all obs have this factor as false**)
+ 
+## tumor > 4cm 
+
+```{r}
+NCDB_lung_nochemo=NCDB_lung[NCDB_lung$RX_SUMM_SYSTEMIC_SUR_SEQ==0,]
+
+head(NCDB_lung_nochemo$TUMOR_SIZE_NUM)
+mean(NCDB_lung_nochemo$TUMOR_SIZE_NUM)
+length(NCDB_lung_nochemo$TUMOR_SIZE_NUM[NCDB_lung_nochemo$TUMOR_SIZE_NUM>40])
+```
+
+## poorly differentiated tumors/Undifferentiated  
+
+```{r}
+
+table(NCDB_lung_nochemo$GRADE)
+```
+
+## vascular invasion
+
+```{r}
+table(NCDB_lung_nochemo$LYMPH_VASCULAR_INVASION2)
+```
+
+## Excision or resection of less than one lobe
+
+```{r}
+sum(NCDB_lung_nochemo$Excision_less_than1==TRUE)
+```
+## visceral pleural present: SSF=10 or 20
+
+```{r}
+sum(NCDB_lung_nochemo$Visceral_Pleural_Invasion=='Present')
+```
+
+## <10 lymph nodes sampled 
+
+```{r}
+sum(NCDB_lung_nochemo$Lymph_Nodes_Sampled=='<10')
+```
+
+## Local tumor destruction 
+
+```{r}
+sum(NCDB_lung$Local_Tumor_Destruction==TRUE)
+```
+
+
+```{r}
+NCDB_lung_nochemo$high_risk=0
+
+
+NCDB_lung_nochemo$high_risk[(NCDB_lung_nochemo$TUMOR_SIZE_NUM)>40 |
+                              NCDB_lung_nochemo$GRADE %in% c("Poorly differentiated", "Undifferentiated") |
+                              NCDB_lung_nochemo$LYMPH_VASCULAR_INVASION=='Present'|
+                              NCDB_lung_nochemo$Visceral_Pleural_Invasion=='Present'|
+                              NCDB_lung_nochemo$Margins == 'Positive'|
+                              NCDB_lung_nochemo$Lymph_Nodes_Sampled =='<10' |
+                              NCDB_lung_nochemo$Excision_less_than1==TRUE]=1
+
+NCDB_lung_nochemo$high_risk=factor(NCDB_lung_nochemo$high_risk, levels = c(0, 1), labels = c('Low-risk', 'High-risk'))
+table(NCDB_lung_nochemo$high_risk)
+
+
+```
+
+```{r}
+# the order in this vector influences the order of variables showing up in the table
+include_columns2=c( "YEAR_OF_DIAGNOSIS", "AGE_cat",  "SEX" , "RACE2", "SPANISH_ORIGIN2", "INSURANCE_STATUS" , 
+                    "MED_INC_QUAR_00",         "NO_HSD_QUAR_00",          "UR_CD_03_2",           
+                    "MED_INC_QUAR_12",         "NO_HSD_QUAR_12",         "UR_CD_13_2",          
+                    "CROWFLY",                  "CDCC_TOTAL_BEST",        "TUMOR_SIZE_cat",      
+                     "Pathology", "Neuroendocrine", 
+                    "GRADE",
+                    "Visceral_Pleural_Invasion",
+                    "LYMPH_VASCULAR_INVASION2" , 
+                    "Margins", 
+                    "Lymph_Nodes_Sampled",
+                    "Excision_less_than1")
+relabel_columns2=list(YEAR_OF_DIAGNOSIS ~ 'Year',
+                      AGE_cat ~ 'Age', 
+                      SEX ~ 'Gender',
+                      RACE2 ~ 'Race',
+                      SPANISH_ORIGIN2~ 'Spanish Origin',
+                      INSURANCE_STATUS~ 'Insurance Status', 
+                      MED_INC_QUAR_00 ~ 'Median Income Quartiles',
+                      NO_HSD_QUAR_00 ~ 'No High School Degree',
+                      MED_INC_QUAR_12 ~ 'Median Income Quartiles 2012',
+                      NO_HSD_QUAR_12 ~ 'No High School Degree 2012',
+                      UR_CD_03_2 ~ 'Urban/Rural',
+                      UR_CD_13_2 ~ 'Urban/Rural 2013',
+                      CROWFLY ~ 'Great Circle Distance',
+                      CDCC_TOTAL_BEST ~ 'Charlson-Deyo Score',
+                      TUMOR_SIZE_cat ~ 'Tumor Size',
+                      LYMPH_VASCULAR_INVASION2 ~ 'Vascular Invasion',
+                      Lymph_Nodes_Sampled ~ 'Lymph nodes sampled ',
+                      Excision_less_than1='Excision/Resection of <1 lobe ',
+                      Visceral_Pleural_Invasion~'Visceral Pleural Invasion')
+
+
+```
+
+# Data check Table 2
+
+Implemented multiple imputation algorithm using fully conditionally specification. Quality of the imputations were checked and validated using graphical summaries.
+
+```{r}
+
+# library(mice)
+# 
+# #check summary stats and distributions 
+# NCDB_lung %>% dfSummary() %>% view()
+# NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% missing_plot()
+# NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% missing_pattern()
+# #income variables will be most affected by imputation-ok since not foucus
+# NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% fluxplot()
+# 
+# #perform imputation and check visually
+# dat2.imp=mice(NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)])
+# plot(dat2.imp)
+# 
+# NCDB_lung2=complete(dat2.imp)
+# 
+
+# write.csv(NCDB_lung2,"lung2.csv")
+NCDB_lung2=read.csv("lung2.csv")
+NCDB_lung2_nochemo=NCDB_lung2[NCDB_lung2$RX_SUMM_SYSTEMIC_SUR_SEQ==0,]
+NCDB_lung2_nochemo$high_risk=0
+
+
+NCDB_lung2_nochemo$high_risk[(NCDB_lung2_nochemo$TUMOR_SIZE_NUM)>40 |
+                              NCDB_lung2_nochemo$GRADE %in% c("Poorly differentiated", "Undifferentiated") |
+                              NCDB_lung2_nochemo$LYMPH_VASCULAR_INVASION=='Present'|
+                              NCDB_lung2_nochemo$Visceral_Pleural_Invasion=='Present'|
+                              NCDB_lung2_nochemo$Margins == 'Positive'|
+                              NCDB_lung2_nochemo$Lymph_Nodes_Sampled =='<10' |
+                              NCDB_lung2_nochemo$Excision_less_than1==TRUE]=1
+NCDB_lung2_nochemo$high_risk=factor(NCDB_lung2_nochemo$high_risk, levels = c(0, 1), labels = c('Low-risk', 'High-risk'))
+
+```
+
+
+# Table 2 
+
+```{r}
+
+table2 <-NCDB_lung2_nochemo%>% tbl_summary( by=high_risk, missing='no',
+                                           statistic = list(all_continuous() ~ "{mean} ({sd})"),
+                                           label = relabel_columns2, include=all_of(include_columns2))%>%
+  add_p(test = list(all_categorical() ~ "fisher.test.simulate.p.values") )%>%
+  bold_labels()
+
+table2  %>% 
+  as_flex_table()%>%flextable::save_as_docx(., path = "table2.docx")
+
+
+table2
+```
+
+
+# Predictors of mortality 
+
+
+PUF_VITAL_STATUS:
+
+- 0: Dead
+- 1: Alive
+
+Potential predictors:
+
+- **Chemo**
+- **high_risk**
+
+- AGE_cat  
+- SEX  
+- RACE2 
+- SPANISH_ORIGIN2 
+- INSURANCE_STATUS        
+- MED_INC_QUAR_00         
+- NO_HSD_QUAR_00          
+- UR_CD_03_2           
+- MED_INC_QUAR_12         
+- NO_HSD_QUAR_12         
+- UR_CD_13_2          
+- CROWFLY                  
+- CDCC_TOTAL_BEST        
+- TUMOR_SIZE_cat          
+- GRADE                   
+- Pathology            
+- Neuroendocrine 
+- Visceral_Pleural_Invasion
+- LYMPH_VASCULAR_INVASION  
+- Margins Lymph_Nodes_Sampled
+- Excision_less_than1   
+
+
+
+```{r}
+include_columns_mort = c("PUF_VITAL_STATUS",
+  "AGE_cat",
+  "SEX" ,
+  "RACE2",
+  "SPANISH_ORIGIN2",
+  "INSURANCE_STATUS" ,
+  "MED_INC_QUAR_00",
+  "NO_HSD_QUAR_00",
+  "UR_CD_03_2",
+  "MED_INC_QUAR_12",
+  "NO_HSD_QUAR_12",
+  "UR_CD_13_2",
+  "CROWFLY",
+  "CDCC_TOTAL_BEST",
+  "TUMOR_SIZE_cat",
+  "GRADE",
+  "Pathology",
+  "Neuroendocrine",
+  "Visceral_Pleural_Invasion",
+  "LYMPH_VASCULAR_INVASION2" ,
+  "Margins",
+  "Lymph_Nodes_Sampled",
+  "Excision_less_than1",
+  "Chemo"
+)
+fit_mort=glm(PUF_VITAL_STATUS~Chemo
+             + AGE_cat  
+             + SEX  
+             + RACE2 
+             + SPANISH_ORIGIN2 
+             # + INSURANCE_STATUS        
+             # + MED_INC_QUAR_00         
+             # + NO_HSD_QUAR_00          
+             # + UR_CD_03_2           
+             # + MED_INC_QUAR_12         
+             # + NO_HSD_QUAR_12         
+             # + UR_CD_13_2          
+             + CROWFLY                  
+             + CDCC_TOTAL_BEST        
+             + TUMOR_SIZE_cat          
+             + GRADE                   
+             + Neuroendocrine 
+             + Visceral_Pleural_Invasion
+             + LYMPH_VASCULAR_INVASION2  
+             + Margins+Lymph_Nodes_Sampled
+             + Excision_less_than1, 
+             data=(NCDB_lung2[,include_columns_mort]), family = binomial(link="logit"))
+
+summary(fit_mort)
+
+```
+
+## Model Selection
+
+```{r}
+mortback=step(fit_mort, direction = "backward")
+```
+
+```{r}
+fit_mort0=glm(PUF_VITAL_STATUS~1, 
+             data=na.omit(NCDB_lung[,include_columns_mort]), family = binomial(link="logit"))
+mort_forward=step(fit_mort0, scope=list(lower=formula(fit_mort0),upper=formula(fit_mort)), direction="forward")
+```
+
+## Final model
+
+```{r}
+mortback$formula
+```
+```{r}
+mort_forward$formula
+```
+
+
+## Interpretation
+
+```{r}
+summary(mortback)
+```
+
+## Diagnostics
+
+### Godness of fit
+
+```{r, include=FALSE}
+#mort_goodness=gof(mortback)
+```
+
+```{r,include=FALSE}
+#mort_goodness$gof
+```
+
+### Influential Obs
+
+
+```{r}
+DX_mort=dx(mortback, byCov=FALSE)
+
+```
+
+```{r}
+hist(DX_mort$dBhat, main='Histogram of dBeta')
+hist(DX_mort$dDev, main='Histogram of dDev')
+hist(DX_mort$dChisq, main='Histogram of dChisq')
+```
+### Residual plots
+
+```{r}
+plot(residuals(mortback, type='pearson'))
+
+```
+
+
+
+
+
+```{r}
+plot(mortback, identify = TRUE, devNew = FALSE)
+
+```
+
+# Coxph Model on Survival Rate
+
+```{r}
+library(survival)
+library(hdnom)
+```
+
+
+
+## Model Selection
+
+```{r}
+library(pec)
+
+selectCox(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS==0) ~Chemo
+             + AGE_cat  
+             + SEX  
+             + RACE2 
+             + SPANISH_ORIGIN2 
+             + CROWFLY                  
+             + CDCC_TOTAL_BEST        
+             + TUMOR_SIZE_cat          
+             + GRADE   
+             + Neuroendocrine 
+             + Visceral_Pleural_Invasion
+             + LYMPH_VASCULAR_INVASION2
+             + Margins
+             + Lymph_Nodes_Sampled
+             + Excision_less_than1, data=NCDB_lung2, rule = "aic")
+```
+
+
+
+
+# Backward selection model
+
+```{r}
+library(labelled)
+var_label(NCDB_lung2) = list(AGE_cat = 'Age', 
+               SEX = 'Gender',
+               CDCC_TOTAL_BEST = 'Charlson-Deyo Score',
+               TUMOR_SIZE_cat = 'Tumor Size',
+               GRADE='Grade',
+               Margins='Margins',
+               LYMPH_VASCULAR_INVASION2 = 'Vascular Invasion',
+               Visceral_Pleural_Invasion ='Visceral Pleural Invasion',
+               Lymph_Nodes_Sampled = 'Lymph nodes sampled',
+               Excision_less_than1='Excision/Resection of <1 lobe ')
+
+
+
+
+NCDB_lung2$Chemo=relevel(as.factor(NCDB_lung2$Chemo), ref="No Chemo" )
+cox_fit <- coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS==0) ~Chemo+
+                      AGE_cat+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +                 
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1, 
+                    data = NCDB_lung2)
+summary(cox_fit)
+```
+
+
+
+
+## Table 2 Adjust
+
+```{r}
+include_columns3 = c('DX_LASTCONTACT_DEATH_MONTHS',
+                     'PUF_VITAL_STATUS',
+                     'Chemo' ,
+                     'AGE',
+                     'AGE_cat' , 
+                     'SEX' ,                     
+                     'CDCC_TOTAL_BEST', 
+                     'TUMOR_SIZE_cat',
+                     'GRADE',      
+                     'Pathology',
+                     'Visceral_Pleural_Invasion', 
+                     'LYMPH_VASCULAR_INVASION2',  
+                     'Margins',                  
+                     'Lymph_Nodes_Sampled', 
+                     'Excision_less_than1')
+
+relabel_columns3=list(AGE_cat ~ 'Age', 
+                     SEX ~ 'Gender',
+                     CDCC_TOTAL_BEST ~ 'Charlson-Deyo Score',
+                     TUMOR_SIZE_cat ~ 'Tumor Size',
+                     GRADE~'Grade',
+                     LYMPH_VASCULAR_INVASION2 ~ 'Vascular Invasion',
+                     Visceral_Pleural_Invasion~'Visceral Pleural Invasion',
+                     Lymph_Nodes_Sampled ~ 'Lymph nodes sampled',
+                     Excision_less_than1='Excision/Resection of <1 lobe ')
+
+tbl_uvsurv <- 
+  NCDB_lung[, include_columns3] %>% 
+  tbl_uvregression(
+    method = coxph,
+    y = Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS==1),
+    exponentiate = TRUE,
+    label=relabel_columns3
+  )%>%
+  modify_header(
+    update = list(
+      estimate ~ "**HR**"
+    )) %>%  modify_footnote(
+    update = estimate ~ 
+      "HR=Hazard Ratio"
+  )
+
+tbl_surv <- cox_fit %>% tbl_regression(exponentiate = TRUE,label=relabel_columns3
+                                       )%>%
+  modify_header(
+    update = list(
+      estimate ~ "**HR**"
+    )) %>%  modify_footnote(
+    update = estimate ~ 
+      "HR=Hazard Ratio"
+  )
+
+table2_merge <- tbl_merge(
+  list(tbl_uvsurv, tbl_surv),
+  tab_spanner = c("**Univariate analysis**", "**Multivariable analysis**"))
+
+table2_merge%>%as_flex_table()%>%flextable::save_as_docx(., path = "table2_merge.docx")
+table2_merge
+```
+
+
+
+# Forest plot 
+
+Next determine the potential benefit received **with the addition of chemotherapy** for **each of the high risk features** listed above. 
+
+This may be done by comparing patients with high risk features to those with low risk (no high risk features) and performing a **forest plot** similar to that in Nelson paper, but will also need the HRs for any significant factors. 
+
+
+Factors:
+- Chemo
+- High-risk
+- Interaction term
+```{r}
+library(jtools)
+#plot_survival=plot_summs(cox_fit, exp=TRUE, colors = 'black')
+
+
+library(survminer)
+ggforest(cox_fit)
+```
+
+
+```{r}
+jpeg("cph_forest.jpeg",res=300)
+ggforest(cox_fit,main="")+scale_x_discrete(labels=c("AGE_cat"="Age"))
+dev.off()
+
+```
+```{r}
+library(forestmodel)
+forest_model(cox_fit)
+```
+```{r}
+library(forestplot)
+library(tidyverse)
+df <- broom::tidy(cox_fit,  exponentiate = TRUE, conf.int=TRUE)
+# pick up estimates and interval
+df1 <- df %>% 
+  transmute( 
+    HR = round(estimate, 2), 
+    low = conf.low, 
+    high = conf.high)
+```
+
+
+```{r, fig.width=7, fig.height=15}  
+# library(ggplot2)
+# plot_survival + labs(x = "\n Model-based Hazard Ratio Estimates \n ", y = NULL)
+
+```
+
+
+
+
+```{r}
+# svg("forest.svg", width=7, height=15)
+# plot_survival + labs(x = "\n Model-based Hazard Ratio Estimates \n ", y = NULL)
+# dev.off()
+```
+
+
+# Nomogram 
+
+Develop a **nomogram** based **on these high risk features** to calculate a % risk reduction with the addition of chemotherapy for patients with these high risk features. 
+
+- Data: High-risk
+- Response Variable: Vita
+- Factor: Chemotherapy
+
+```{r}
+library(rms)
+units(NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS) <- "month"
+ddist <- datadist(NCDB_lung2[,include_columns3])
+options(datadist='ddist')
+cph_fit = cph(
+  Surv(DX_LASTCONTACT_DEATH_MONTHS, PUF_VITAL_STATUS==0) ~  Chemo*(
+                      AGE+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +  
+                      Pathology +
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1), 
+                    data = NCDB_lung2, surv = TRUE, x=TRUE, y=TRUE, time.inc=24)
+surv24=survest(cph_fit)
+str(surv24)
+
+plot(exp(surv24$surv),surv24$cumhaz)
+
+cph_fit_chemo = cph(
+  Surv(DX_LASTCONTACT_DEATH_MONTHS, PUF_VITAL_STATUS==0) ~
+                      AGE+
+                      SEX +
+                      CDCC_TOTAL_BEST  +
+                      TUMOR_SIZE_cat  +
+                      GRADE  +
+                      Pathology +
+                      Visceral_Pleural_Invasion+
+                      LYMPH_VASCULAR_INVASION2+
+                      Margins  +
+                      Lymph_Nodes_Sampled +
+                      Excision_less_than1,
+                    data = NCDB_lung2, surv = TRUE, x=TRUE, y=TRUE, time.inc=24,subset=Chemo=="Chemo")
+
+cph_fit_nochemo = cph(
+  Surv(DX_LASTCONTACT_DEATH_MONTHS, PUF_VITAL_STATUS==0) ~
+                      AGE+
+                      SEX +
+                      CDCC_TOTAL_BEST  +
+                      TUMOR_SIZE_cat  +
+                      GRADE  +
+                      Pathology +
+                      Visceral_Pleural_Invasion+
+                      LYMPH_VASCULAR_INVASION2+
+                      Margins  +
+                      Lymph_Nodes_Sampled +
+                      Excision_less_than1,
+                    data = NCDB_lung2, surv = TRUE, x=TRUE, y=TRUE, time.inc=24,subset=Chemo=="No Chemo")
+
+
+cph_fit3 = cph(
+  Surv(DX_LASTCONTACT_DEATH_MONTHS, PUF_VITAL_STATUS==0) ~  Chemo*(
+                      AGE+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +   
+                      Pathology +
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1), 
+                    data = NCDB_lung2, surv = TRUE, x=TRUE, y=TRUE, time.inc=3)
+
+
+
+cph_fit60 = cph(
+  Surv(DX_LASTCONTACT_DEATH_MONTHS, PUF_VITAL_STATUS==0) ~  Chemo*(
+                      AGE+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +   
+                      Pathology +
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1), 
+                    data = NCDB_lung2, surv = TRUE, x=TRUE, y=TRUE, time.inc=60)
+```
+
+## Chemo
+
+```{r}
+med <- Quantile(cph_fit_chemo)
+surv <- Survival(cph_fit_chemo)
+nom1 <- nomogram(cph_fit_chemo,fun=list(function(x) surv(3, x),
+                                  function(x) surv(24, x),
+                                  function(x) surv(60, x)),
+                funlabel=c("3-Month Survival Probability",
+"24-month Survival Probability", "60-month Survival Probability"), adj.to = list(Chemo='Chemo'))
+```
+
+
+```{r, fig.width=15, fig.height=20}   
+plot(nom1,xfrac=0.4, cex.axis=1, cex.var=1)
+```
+
+## No Chemo
+
+```{r}
+nom2 <- nomogram(cph_fit_nochemo,fun=list(function(x) surv(3, x),
+                                  function(x) surv(24, x),
+                                  function(x) surv(60, x)),
+                funlabel=c("3-Month Survival Probability",
+"24-month Survival Probability", "60-month Survival Probability"), adj.to = list(Chemo='No Chemo'))
+```
+
+
+```{r, fig.width=15, fig.height=20}  
+plot(nom2,xfrac=0.4, cex.axis=1, cex.var=1)
+```
+
+# Nomogram and calibration of the tools using hdnom package
+
+```{r}
+
+
+
+
+# cal3=calibrate(cph_fit3, cmethod="KM", method="boot", surv=TRUE, u=3, m=300, B=1000)
+# 
+# cal24=calibrate(cph_fit, cmethod="KM", method="boot", surv=TRUE, u=24, m=300, B=1000)
+# 
+# cal60=calibrate(cph_fit60, cmethod="KM", method="boot", surv=TRUE, u=60, m=300, B=1000)
+# 
+# 
+# par(mar=c(8,5,3,2),cex = 1.0)
+# plot(cal60);plot(cal24,add=TRUE);plot(cal3,add=TRUE)
+
+cal_chemo=calibrate(cph_fit_chemo, cmethod="KM", method="boot", surv=TRUE, u=3, m=300, B=1000)
+cal_nochemo=calibrate(cph_fit_nochemo, cmethod="KM", method="boot", surv=TRUE, u=3, m=300, B=1000)
+
+ 
+```
+# plot survival curves at all levels
+
+```{r}
+
+NCDB_lung2$high_risk=0
+
+
+NCDB_lung2$high_risk[(NCDB_lung2$TUMOR_SIZE_NUM)>40 |
+                              NCDB_lung2$GRADE %in% c("Poorly differentiated", "Undifferentiated") |
+                              NCDB_lung2$LYMPH_VASCULAR_INVASION=='Present'|
+                              NCDB_lung2$Visceral_Pleural_Invasion=='Present'|
+                              NCDB_lung2$Margins == 'Positive'|
+                              NCDB_lung2$Lymph_Nodes_Sampled =='<10' |
+                              NCDB_lung2$Excision_less_than1==TRUE]=1
+NCDB_lung2$high_risk=factor(NCDB_lung2$high_risk, levels = c(0, 1), labels = c('Low-risk', 'High-risk'))
+table(NCDB_lung2$high_risk)
+
+
+
+NCDB_lung2$HRCgroups=interaction(NCDB_lung2$high_risk,NCDB_lung2$Chemo)
+table(NCDB_lung2$HRCgroups)
+
+ddist <- datadist(NCDB_lung2[,c(include_columns3,"HRCgroups")])
+cph_fit_HRC = cph(
+  Surv(DX_LASTCONTACT_DEATH_MONTHS, PUF_VITAL_STATUS==0) ~  HRCgroups, 
+                    data = NCDB_lung2, surv = TRUE, x=TRUE, y=TRUE, time.inc=24)
+
+survplot(cph_fit_HRC, levels.only=TRUE, time.inc=24,col=c(1:4),label.curves=list(keys="lines"),
+         type="kaplan-meier", 
+         xlab="Survival Time in Months")
+
+
+ggplot(Predict(cph_fit_HRC,HRCgroups))
+
+ttt=quantile(NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS)
+# predict(object, newdata=NULL,
+#         type=c("lp", "x", "data.frame", "terms", "cterms", "ccterms",
+#                "adjto", "adjto.data.frame", "model.frame"),
+#         se.fit=FALSE, conf.int=FALSE,
+#         conf.type=c('mean','individual','simultaneous'),
+#         kint=1, na.action=na.keep, expand.na=TRUE,
+#         center.terms=type=="terms", ...) # cph
+NCDB_lung2$OS=survest(cph_fit_chemo,newdata=NCDB_lung2[,include_columns3])
+summary(NCDB_lung2$OS)
+NCDB_lung2$OScut=cut(NCDB_lung2$OS,breaks=c(.01,.08,.12,.17,.74))
+summary(NCDB_lung2$OScut)
+
+NCDB_lung2$OSCgroups=interaction(NCDB_lung2$OScut,NCDB_lung2$Chemo)
+table(NCDB_lung2$OSCgroups)
+NCDB_lung2$OSCgroups=factor(NCDB_lung2$OSCgroups,levels=levels(NCDB_lung2$OSCgroups),labels=c("Q1,Chemo","Q2,Chemo","Q3,Chemo","Q4,Chemo","Q1,NoChemo","Q2,NoChemo","Q3,NoChemo","Q4,NoChemo"))
+
+ddist <- datadist(NCDB_lung2[,c(include_columns3,"OSCgroups")])
+cph_fit_chemo = cph(
+  Surv(DX_LASTCONTACT_DEATH_MONTHS, PUF_VITAL_STATUS==0) ~  OSCgroups, 
+                    data = NCDB_lung2, surv = TRUE, x=TRUE, y=TRUE, time.inc=24)
+
+survplot(cph_fit_chemo, levels.only=TRUE, time.inc=24,col=c(1:4,1:4),lty=rep(1:2,each=4),label.curves=list(keys="lines"),
+         type="kaplan-meier", ylab="Proportion Survived",
+         xlab="Survival Time in Months")
+
+
+ggplot(Predict(cph_fit_chemo,OSCgroups))
+
+
+```
+
+
+
+
+
+
+
+# Discarded code
+
+NOTE: DON'T USE THIS CODE BELOW -Couldn't get good fit
+
+```{r,include=FALSE}
+          
+library(hdnom)
+
+#compare a lasso (lambda) adaptive model and elastic net (lambda, alpha)
+x=NCDB_lung2[,c("Chemo","AGE_cat","SEX","CDCC_TOTAL_BEST","TUMOR_SIZE_cat","GRADE","Visceral_Pleural_Invasion","LYMPH_VASCULAR_INVASION2","Margins","Lymph_Nodes_Sampled","Excision_less_than1")]
+time=NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS
+event=NCDB_lung2$PUF_VITAL_STATUS==0
+y=Surv(time, event)
+
+#fit the enet and lasso adaptive models
+suppressMessages(library("doParallel"))
+registerDoParallel(detectCores())
+
+fit.enet <- fit_aenet(x, y, nfolds = 3, rule = "lambda.1se", seed = c(15, 71), parallel = TRUE)
+names(fit.enet)
+
+fit.lasso <- fit_alasso(x, y, nfolds = 3, rule = "lambda.1se", seed = c(51, 72))
+names(fit.lasso)
+
+```
+
+
+# Create nomograms
+
+```{r,include=FALSE}
+nom <- as_nomogram(
+  fit.enet, x, time, event,
+  pred.at = 365 * 2,
+  funlabel = "24-month Survival Probability"
+)
+
+plot(nom)
+
+
+```
+
+
+# Subgroup Analysis
+
+We could do subgroup analysis with those patients diagnosed in 2010-2013 as these patients could have at least 5 years survival.
+
+- Data: 2010-2013

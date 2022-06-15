@@ -658,6 +658,7 @@ bal.tab(w.out,stats=.all)
 ```{r}
 love.plot(w.out,stats=c("m","ks"),stars="std")
 ```
+
 ```{r}
 svg("loveplot.svg")
 love.plot(w.out,stats=c("m","ks"),stars="std")
@@ -795,23 +796,23 @@ Implemented multiple imputation algorithm using fully conditionally specificatio
 
 ```{r}
 
-# library(mice)
-# 
-# #check summary stats and distributions 
-# NCDB_lung %>% dfSummary() %>% view()
-# NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% missing_plot()
-# NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% missing_pattern()
-# #income variables will be most affected by imputation-ok since not foucus
-# NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% fluxplot()
-# 
-# #perform imputation and check visually
-# dat2.imp=mice(NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)])
-# plot(dat2.imp)
-# 
-# NCDB_lung2=complete(dat2.imp)
+library(mice)
+
+#check summary stats and distributions
+NCDB_lung %>% dfSummary() %>% view()
+NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% missing_plot()
+NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% missing_pattern()
+#income variables will be most affected by imputation-ok since not foucus
+NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)] %>% fluxplot()
+
+#perform imputation and check visually
+dat2.imp=mice(NCDB_lung[,-c(30,42:49,88,93,94,96,98,102,138:140,145:313)])
+plot(dat2.imp)
+
+NCDB_lung2=complete(dat2.imp)
 # 
 
-# write.csv(NCDB_lung2,"lung2.csv")
+write.csv(NCDB_lung2,"lung2.csv")
 NCDB_lung2=read.csv("lung2.csv")
 NCDB_lung2_nochemo=NCDB_lung2[NCDB_lung2$RX_SUMM_SYSTEMIC_SUR_SEQ==0,]
 NCDB_lung2_nochemo$high_risk=0
@@ -1331,12 +1332,7 @@ plot(nom2,xfrac=0.4, cex.axis=1, cex.var=1)
 ```
 
 # Nomogram and calibration of the tools using hdnom package
-
-```{r}
-
-
-
-
+```{r, warning=FALSE, message=FALSE}
 # cal3=calibrate(cph_fit3, cmethod="KM", method="boot", surv=TRUE, u=3, m=300, B=1000)
 # 
 # cal24=calibrate(cph_fit, cmethod="KM", method="boot", surv=TRUE, u=24, m=300, B=1000)
@@ -1349,15 +1345,10 @@ plot(nom2,xfrac=0.4, cex.axis=1, cex.var=1)
 
 cal_chemo=calibrate(cph_fit_chemo, cmethod="KM", method="boot", surv=TRUE, u=3, m=300, B=1000)
 cal_nochemo=calibrate(cph_fit_nochemo, cmethod="KM", method="boot", surv=TRUE, u=3, m=300, B=1000)
-
- 
 ```
 # plot survival curves at all levels
-
 ```{r}
-
 NCDB_lung2$high_risk=0
-
 
 NCDB_lung2$high_risk[(NCDB_lung2$TUMOR_SIZE_NUM)>40 |
                               NCDB_lung2$GRADE %in% c("Poorly differentiated", "Undifferentiated") |
@@ -1387,6 +1378,9 @@ survplot(cph_fit_HRC, levels.only=TRUE, time.inc=24,col=c(1:4),label.curves=list
 ggplot(Predict(cph_fit_HRC,HRCgroups))
 
 ttt=quantile(NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS)
+
+#--predict(cph_fit_HRC, newdata = data.frame(HRCgroups))
+
 # predict(object, newdata=NULL,
 #         type=c("lp", "x", "data.frame", "terms", "cterms", "ccterms",
 #                "adjto", "adjto.data.frame", "model.frame"),
@@ -1394,7 +1388,41 @@ ttt=quantile(NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS)
 #         conf.type=c('mean','individual','simultaneous'),
 #         kint=1, na.action=na.keep, expand.na=TRUE,
 #         center.terms=type=="terms", ...) # cph
-NCDB_lung2$OS=survest(cph_fit_chemo,newdata=NCDB_lung2[,include_columns3])
+
+#cox survival estimates
+srv<-Surv(NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS, NCDB_lung2$PUF_VITAL_STATUS==0)
+f1<-cph(srv ~ AGE + SEX + CDCC_TOTAL_BEST  + TUMOR_SIZE_cat  + GRADE  +
+          Pathology + Visceral_Pleural_Invasion + LYMPH_VASCULAR_INVASION2 +
+          Margins  + Lymph_Nodes_Sampled + Excision_less_than1,
+        data=NCDB_lung2, x=TRUE, y=TRUE)
+
+des1<-survest(f1, age=NCDB_lung2$AGE,
+              sex=NCDB_lung2$SEX, 
+              cdcc=NCDB_lung2$CDCC_TOTAL_BEST,
+              tumorsize_cat=NCDB_lung2$TUMOR_SIZE_cat, 
+              grade=NCDB_lung2$GRADE,
+              pathology=NCDB_lung2$Pathology,
+              visceral_pleural_invasion=NCDB_lung2$Visceral_Pleural_Invasion,
+              lymph_vascular_invasion2=NCDB_lung2$LYMPH_VASCULAR_INVASION2,
+              margins=NCDB_lung2$Margins,
+              lymph_node_sampled=NCDB_lung2$Lymph_Nodes_Sampled,
+              excision_less_than1=NCDB_lung2$Excision_less_than1,
+              times=NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS, conf.int=0.9) 
+des1$surv[5000]
+des1$surv[4]
+#NCDB_lung2$OS=survest(cph_fit_chemo, newdata=NCDB_lung2[,include_columns3]) #*****
+
+
+# NCDB_lung2$OS=survest(cph_fit_chemo, newdata=NCDB_lung2[c("AGE","SEX", "CDCC_TOTAL_BEST","TUMOR_SIZE_cat","GRADE", "Pathology","Visceral_Pleural_Invasion", "LYMPH_VASCULAR_INVASION2","Margins","Lymph_Nodes_Sampled", "Excision_less_than1")],
+#                       times=10326)
+
+# # Test survest by comparing to survfit.coxph for a more complex model
+# f <- cph(Srv ~ pol(age,2)*strat(sex), x=TRUE, y=TRUE)
+# survest(f, data.frame(age=median(age), sex=levels(sex)), times=6)
+
+```
+
+```{r}
 summary(NCDB_lung2$OS)
 NCDB_lung2$OScut=cut(NCDB_lung2$OS,breaks=c(.01,.08,.12,.17,.74))
 summary(NCDB_lung2$OScut)
@@ -1412,11 +1440,29 @@ survplot(cph_fit_chemo, levels.only=TRUE, time.inc=24,col=c(1:4,1:4),lty=rep(1:2
          type="kaplan-meier", ylab="Proportion Survived",
          xlab="Survival Time in Months")
 
-
 ggplot(Predict(cph_fit_chemo,OSCgroups))
-
-
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

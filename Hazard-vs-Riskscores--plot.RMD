@@ -1,0 +1,359 @@
+---
+output: 
+  pdf_document:
+    keep_tex: true
+    fig_caption: true
+    latex_engine: pdflatex
+    number_sections: true
+    toc: true
+    toc_depth: 4
+title: "SURVIVAL ANALYSIS - NCDB"
+author: 
+- Kelvin Ofori-Minta
+- University of Texas at El Paso (UTEP) 
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb, bm}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \rhead{Summer RA}
+- \lhead{NCDB Research}
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+---
+\newpage
+\Section{Loading Data and Preparations}
+```{r setup, include=FALSE}
+lung<-read.csv("lung_data2.csv") #predictors of mortality
+
+```
+
+```{r}
+lung$Chemo<-factor(lung$Chemo, 
+                     levels=c("No Chemo", "Chemo"),
+                     labels=c("No Chemo", "Chemo"))
+
+lung$AGE_cat<-factor(lung$AGE_cat, 
+                     levels = c("50-60", "60-70", "70-80", "Above 80", "Below 50"),
+                     labels = c("50-60", "60-70", "70-80", "Above 80", "Below 50"))
+
+lung$SEX<-factor(lung$SEX,
+                   levels=c("Female", "Male"),
+                   labels=c("Female", "Male"))
+
+lung$CDCC_TOTAL_BEST<-factor(lung$CDCC_TOTAL_BEST,
+                             levels = c("0","1","2","3"),
+                             labels = c("0","1","2","3"))
+
+lung$TUMOR_SIZE_cat<-factor(lung$TUMOR_SIZE_cat,
+                            levels=c("<=1cm","1cm-2cm","2cm-3cm","3cm-4cm","4cm-5cm"),
+                            labels=c("<=1cm","1cm-2cm","2cm-3cm","3cm-4cm","4cm-5cm"))
+
+lung$GRADE<-factor(lung$GRADE,
+                   levels=c("Moderately differentiated","Poorly differentiated", "Undifferentiated","Unknown","Well differentiated"),
+                   labels=c("Moderately differentiated","Poorly differentiated", "Undifferentiated","Unknown", "Well differentiated" ))
+
+lung$Pathology<-factor(lung$Pathology,
+                       levels = c("Adenocarcinoma","Other", "Squamous"),
+                       labels = c("Adenocarcinoma","Other", "Squamous"))
+
+
+lung$Visceral_Pleural_Invasion<-factor(lung$Visceral_Pleural_Invasion,
+                                       levels = c("Other", "Present"),
+                                       labels = c("Other", "Present"))
+
+lung$LYMPH_VASCULAR_INVASION2<-factor(lung$LYMPH_VASCULAR_INVASION2,
+                                      levels=c("Absent", "Present", "Unknown"),
+                                      labels=c("Absent", "Present", "Unknown"))
+
+lung$Margins<-factor(lung$Margins,
+                     levels = c("Other","Positive","Zero"),
+                     labels = c("Other","Positive","Zero"))
+
+lung$Lymph_Nodes_Sampled<-factor(lung$Lymph_Nodes_Sampled,
+                                 levels = c("<10",">=10", "Unknown"),
+                                 labels = c("<10",">=10", "Unknown"))
+
+lung$Excision_less_than1<-factor(lung$Excision_less_than1,
+                                 levels = c("FALSE","TRUE"),
+                                 labels = c("FALSE", "TRUE"))
+```
+
+\newpage
+\subsection{Partition Data}
+```{r, warning=FALSE, message=FALSE}
+require(caTools)
+set.seed(1)
+split = sample.split(lung$DX_LASTCONTACT_DEATH_MONTHS,SplitRatio = 0.85)
+train=subset(lung, split==T)
+test=subset(lung, split==F)
+```
+
+\newpage
+\section{COXPH model for predictors of mortality - ALL DATA} 
+```{r, include = FALSE}
+library("survival")
+# library("survminer")
+
+lung$Chemo=relevel(as.factor(lung$Chemo), ref="No Chemo")
+cox_fit1 <- coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~ Chemo +
+                      AGE_cat+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +                 
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1, 
+                    data = lung)
+
+cox_fit1$coefficients #odds
+
+exp(cox_fit1$coefficients) #HR
+
+# lung$Chemo=relevel(as.factor(lung$Chemo), ref="No Chemo")
+# cox_fit11 <- coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~
+#                       AGE_cat+       
+#                       SEX +                     
+#                       CDCC_TOTAL_BEST  +         
+#                       TUMOR_SIZE_cat  +          
+#                       GRADE  +                 
+#                       Visceral_Pleural_Invasion+ 
+#                       LYMPH_VASCULAR_INVASION2+  
+#                       Margins  +                
+#                       Lymph_Nodes_Sampled +    
+#                       Excision_less_than1, 
+#                     data = lung)
+# 
+# cox_fit11$coefficients #odds
+# 
+# exp(cox_fit11$coefficients) #HR
+
+```
+
+\newpage
+# format results of cox model
+```{r}
+require(kableExtra)
+broom::tidy(cox_fit1 , 
+            exp=TRUE) %>%
+  kable()
+```
+
+\newpage
+```{r, warning=FALSE, message=FALSE}
+cox_fit1 %>%
+  gtsummary::tbl_regression(exp=TRUE)
+```
+
+
+\newpage
+\Section{Predicting Risks scores and Hazard Ratio from COX PH Model}
+\subsection{Distribution of Riskscores}
+```{r}
+riskscore1_all=predict(cox_fit1,  type="risk") #the risk score exp(lp)
+hist(riskscore1_all, xlim = c(0,2), xlab = "Riskscores")
+
+#Density plot of riskscores
+# TRAIN_RISK <- data.frame(rs=riskscore1_train)
+# TEST_RISK <- data.frame(rs=riskscore1_test)
+ALL_DATA <- data.frame(Riskscores=riskscore1_all)
+
+# TRAIN_RISK$type<-'train'
+# TEST_RISK$type<-'test'
+ALL_DATA$data<-'Full Data'
+ggplot(ALL_DATA, aes(Riskscores, fill=data)) + geom_density(alpha = 0.5) 
+
+# ggplot(TEST_RISK, aes(rs, fill=type)) + geom_density(alpha = 0.2) 
+# ggplot(TRAIN_RISK, aes(rs, fill=type)) + geom_density(alpha = 0.2) 
+# 
+# datlen<-rbind(TRAIN_RISK,TEST_RISK,ALL_DATA)
+# ggplot(datlen, aes(rs, fill=type)) + geom_density(alpha = 0.2)
+```
+
+\newpage
+\section{Hazard Ratios}
+```{r}
+lphr3=predict(cox_fit1, type="lp") #predicted hazard ratio
+
+# hist(lphr3, xlim = c(0,2), xlab = "HR")
+# hist(1-lphr3, xlim = c(0,2), xlab = "HR")
+range(lphr3)
+range(1-lphr3)
+
+
+ALLDATA <- data.frame(Hazard_Ratios=lphr3)
+ALLDATA$data<-'Full Data'
+ggplot(ALLDATA, aes(Hazard_Ratios, fill=data)) + geom_density(alpha = 0.5) 
+
+ALLDATA <- data.frame(Hazard_Ratios1=1-lphr3)
+ALLDATA$data<-'Full Data'
+ggplot(ALLDATA, aes(Hazard_Ratios1, fill=data)) + geom_density(alpha = 0.5)
+```
+
+\newpage
+\section{Scatterplots of Riskscores vs Hazard Ratios}
+```{r}
+plot(riskscore1_all, lphr3, ylab = "Hazard Ratio" ,
+     xlab="risk score", col="blue")
+v=quantile(riskscore1_all)
+abline(h=0, lty=2, lwd=2, col="red")
+abline(v=1, lwd=3, col="red")
+abline(v=v[2], lwd=3, col="snow3")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+***Comment***\n
+A positive HR indicates worse conditions/prognosis, while a negative coefficient indicates a better condition/prognosis.
+Riskscores > 1 corresponds to increased hazards of mortality with multiple HRF.
+Riskscores < 1 corresponds to decreased hazards of mortality with multiple HRF, thus a survival benefit from chemotherapy. 
+The threshold for survival benefit is experienced when the risk score is < 1  at
+which point the hazards of mortality is decreased.
+
+\newpage
+```{r}
+plot(riskscore1_all, 1-lphr3, ylab = "Hazard Ratio" ,
+     xlab="Risk Score", col="blue")# ylim=c(0.6,1.6), xlim=c(0.6,1.6)
+
+abline(h=1, lty=2, lwd=2, col="red")
+abline(v=1, lwd=3, col="red")
+abline(v=v[2], lwd=3, col="snow3")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+***Subtracting HR from 1 gives reverse scale of HR reads, where lower HR indicates worse conditions, higher HR indicates better prognosis***
+As risk score increases, the hazard ratio gets worse (bad conditions).
+A survival benefit from adjuvant chemotherapy is realised when the risk score is < 1  at which point the hazard ratio of mortality appears to be better.
+
+
+
+
+\newpage
+\section{The scatter plot of hazard ratio of chemo(reference: no chemo) versus risk score.}
+```{r}
+#obtain hazard ratio for train data
+lung$Chemo=relevel(as.factor(lung$Chemo), ref="No Chemo")
+cox_fitchemo <-coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~ Chemo, 
+                  data = lung)
+cox_fitchemo %>%
+  gtsummary::tbl_regression(exp=TRUE)
+
+hr_chemo=exp(cox_fitchemo$coefficients) #HR for chemo therapy
+hr_chemo1=predict(cox_fitchemo, type="lp") #predicted hazard ratio
+plot(riskscore1_all, 1-hr_chemo1)
+
+range(hr_chemo1)
+range(hr_chemo)
+range(1-hr_chemo1)
+```
+
+\newpage
+```{r}
+plot(riskscore1_all, hr_chemo1, ylab = "Hazard Ratio" ,
+     xlab="risk score", col="blue")
+
+abline(h=0, lty=2, lwd=2, col="red")
+abline(v=1, lwd=3, col="red")
+abline(v=v[2], lwd=3, col="snow3")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+
+*****************************************************************
+\newpage
+\section{Riskscores from Est.PH}
+# Est.PH {survC1} - Derivation of a risk score by a Cox proportioal hazard model
+## Obtain Risk scores from the best predictors of mortality
+```{r}
+#Provides risk score by fitting data to a Cox's proportional hazards model with a given set of predictors
+# Input data. The 1st column should be time-to-event, and the 2nd column is event indicator (1=event, 0=censor). The rest of the columns are covariates/predictors used in the model. No character variable or missing is allowed. 
+#OUTPUT
+# beta = Estimates for regression coefficient in the Cox model
+# var = Variance-Covariance matrix for the beta above
+# rs 	= Risk score of each individual
+# ft 	= coxph object with the fitted model
+
+library(survC1)
+train1=lung[,c(1:2)] #time & status
+
+train2 =lung[, c(3:15)] # other covariates
+
+#convert other sub levels in all categorical covariates to integer
+p = data.frame(lapply(train2, as.integer))
+
+#combine numeric time & status with the numeric covariates
+train_data = data.frame(cbind(train1,p)) 
+
+#Make sure distribution of variables are not distorted after conversion
+require(inspectdf)
+show_plot(inspect_cat(train)) # inspect categorical columns 
+
+show_plot(inspect_num(train)) #inspect numeric columns 
+
+show_plot(inspect_num(train_data)) #inspect numeric columns 
+```
+
+```{r}
+#obtain risk scores for each individual
+rsmodel=Est.PH(train_data)
+riskscores=rsmodel$rs
+hist(riskscores)
+hist(1-riskscores)
+#riskscores1 = 1 - riskscores
+```
+
+
+```{r}
+#obtain hazard rates
+coef=rsmodel$beta
+exp(coef)
+hist(sqrt(riskscores))
+#riskscores1 = 1 - riskscores
+```
+
+
+```{r}
+lphr3=predict(cox_fit3, train, type="lp") #predicted hazard ratio
+hrrr=1-lphr3
+```
+
+
+```{r}
+plot(riskscores, 1-lphr3, ylab = "Hazard Ratio" ,
+     xlab="Risk Score", col="blue")# ylim=c(0.6,1.6), xlim=c(0.6,1.6)
+
+abline(h=1, lty=2, lwd=2, col="red")
+abline(v=1, lwd=3, col="red")
+abline(v=v[2], lwd=3, col="snow3")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

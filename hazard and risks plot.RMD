@@ -1,0 +1,541 @@
+---
+output: 
+  pdf_document:
+    keep_tex: true
+    fig_caption: true
+    latex_engine: pdflatex
+    number_sections: true
+    toc: true
+    toc_depth: 4
+title: "SURVIVAL ANALYSIS - TCGA PRAD CANCER"
+author: 
+- Kelvin Ofori-Minta
+- University of Texas at El Paso (UTEP) 
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+geometry: margin=1in
+fontsize: 11pt
+spacing: single
+header-includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb, bm}
+- \usepackage{amsfonts}
+- \usepackage{amsthm}
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \rhead{Collaborative Research}
+- \lhead{TCGA - Clinical Data}
+- \cfoot{\thepage}
+- \usepackage{algorithm}
+- \usepackage[noend]{algpseudocode}
+---
+
+```{r setup, include=FALSE}
+lung<-read.csv("lung_data2.csv") #predictors of mortality
+
+# In Survival Analysis, you have three options for modeling the survival function: non-parametric (such as Kaplan-Meier), semi-parametric (Cox regression), and parametric (such as the Weibull distribution).Nov 25, 2018
+```
+
+```{r}
+lung$Chemo<-factor(lung$Chemo, 
+                     levels=c("No Chemo", "Chemo"),
+                     labels=c("No Chemo", "Chemo"))
+
+lung$AGE_cat<-factor(lung$AGE_cat, 
+                     levels = c("50-60", "60-70", "70-80", "Above 80", "Below 50"),
+                     labels = c("50-60", "60-70", "70-80", "Above 80", "Below 50"))
+
+lung$SEX<-factor(lung$SEX,
+                   levels=c("Female", "Male"),
+                   labels=c("Female", "Male"))
+
+lung$CDCC_TOTAL_BEST<-factor(lung$CDCC_TOTAL_BEST,
+                             levels = c("0","1","2","3"),
+                             labels = c("0","1","2","3"))
+
+lung$TUMOR_SIZE_cat<-factor(lung$TUMOR_SIZE_cat,
+                            levels=c("<=1cm","1cm-2cm","2cm-3cm","3cm-4cm","4cm-5cm"),
+                            labels=c("<=1cm","1cm-2cm","2cm-3cm","3cm-4cm","4cm-5cm"))
+
+lung$GRADE<-factor(lung$GRADE,
+                   levels=c("Moderately differentiated","Poorly differentiated", "Undifferentiated","Unknown","Well differentiated"),
+                   labels=c("Moderately differentiated","Poorly differentiated", "Undifferentiated","Unknown", "Well differentiated" ))
+
+lung$Pathology<-factor(lung$Pathology,
+                       levels = c("Adenocarcinoma","Other", "Squamous"),
+                       labels = c("Adenocarcinoma","Other", "Squamous"))
+
+
+lung$Visceral_Pleural_Invasion<-factor(lung$Visceral_Pleural_Invasion,
+                                       levels = c("Other", "Present"),
+                                       labels = c("Other", "Present"))
+
+lung$LYMPH_VASCULAR_INVASION2<-factor(lung$LYMPH_VASCULAR_INVASION2,
+                                      levels=c("Absent", "Present", "Unknown"),
+                                      labels=c("Absent", "Present", "Unknown"))
+
+lung$Margins<-factor(lung$Margins,
+                     levels = c("Other","Positive","Zero"),
+                     labels = c("Other","Positive","Zero"))
+
+lung$Lymph_Nodes_Sampled<-factor(lung$Lymph_Nodes_Sampled,
+                                 levels = c("<10",">=10", "Unknown"),
+                                 labels = c("<10",">=10", "Unknown"))
+
+lung$Excision_less_than1<-factor(lung$Excision_less_than1,
+                                 levels = c("FALSE","TRUE"),
+                                 labels = c("FALSE", "TRUE"))
+```
+
+\newpage
+# Partition Data
+```{r, warning=FALSE, message=FALSE}
+require(caTools)
+set.seed(1)
+split = sample.split(lung$DX_LASTCONTACT_DEATH_MONTHS,SplitRatio = 0.85)
+train=subset(lung, split==T)
+test=subset(lung, split==F)
+```
+
+
+# Survival curve and logrank test for treatment groups
+```{r, warning=FALSE, message=FALSE}
+library("survival")
+library("survminer")
+
+fit1<-survfit(Surv(lung$DX_LASTCONTACT_DEATH_MONTHS,
+                   lung$PUF_VITAL_STATUS) ~ lung$Chemo, data=lung)
+
+#print(fit1)
+
+summary(fit1)$table
+
+
+d=data.frame(time=fit1$time, 
+             n.risk=fit1$n.risk,
+             n.event=fit1$n.event,
+             n.censor=fit1$n.censor,
+             surv=fit1$surv)
+head(d)
+```
+\newpage
+```{r}
+ggsurvplot(fit1,
+          #legend.labs=c("tumor_free", "with_tumor"),
+          pval = TRUE, conf.int = F,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"))
+```
+Logrank test is insignificant = no significant difference between the two treatment groups, but the curve shows a slightly higher survival probability for chemo groups than no_chemo groups. This is violation of ph assumption.
+
+\newpage
+# cumulative hazard plot of treatment groups
+```{r}
+ggsurvplot(fit1,
+          #legend.labs=c("tumor_free", "with_tumor"),
+          pval = TRUE, conf.int = F,
+          risk.table = TRUE, # Add risk table
+          risk.table.col = "strata", # Change risk table color by groups
+          linetype = "strata", # Change line type by groups
+          #surv.median.line = "hv", # Specify median survival
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"),
+          fun = "cumhaz")
+
+```
+
+\newpage
+# Predicting survival probabability from survival object.
+```{r, warning=FALSE}
+
+library(peperr)
+w=as.matrix(test[,-c(1,2)]) #matrix of covariates
+
+e=predictProb(fit1, Surv(lung$DX_LASTCONTACT_DEATH_MONTHS,
+                         lung$PUF_VITAL_STATUS), x=w,
+              times=5)
+#e #predicted probabilities of all of survival with chemo treatment at the 5th month
+```
+
+
+
+# CPH model for predictors of mortality 
+```{r, warning=FALSE, message=FALSE}
+library(rms)
+lung$Chemo=relevel(as.factor(lung$Chemo), ref="No Chemo")
+cph_fit = cph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~ Chemo +
+                      AGE_cat+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +                 
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1, 
+                    data = lung, surv = TRUE, x=TRUE, y=TRUE)
+#summary(cph_fit)
+cph_fit$coefficients
+exp(cph_fit$coefficients)
+lp=exp(cph_fit$linear.predictors) #linear predictors for all patients
+
+# plot(lung$DX_LASTCONTACT_DEATH_MONTHS, exp(cph_fit$linear.predictors),
+#      type="p", main = "Hazard rates of all patients vs time", 
+#      ylab = "exp(beta)", xlab = "time")
+
+```
+\newpage
+# COXPH model for predictors of mortality 
+```{r, include = FALSE}
+lung$Chemo=relevel(as.factor(lung$Chemo), ref="No Chemo")
+cox_fit1 <- coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~ Chemo +
+                      AGE_cat+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +                 
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1, 
+                    data = lung)
+summary(cox_fit1)
+cox_fit1$coefficients #odds
+
+exp(cox_fit1$coefficients) #HR
+
+
+# plot(lung$DX_LASTCONTACT_DEATH_MONTHS, exp(cox_fit1$linear.predictors),
+#      type="p", main = "Hazard rates of all patients vs time", 
+#      ylab = "exp(beta)", xlab = "time")
+```
+
+\newpage
+# format results of cox model
+```{r}
+require(kableExtra)
+broom::tidy(cox_fit1 , 
+            exp=TRUE) %>%
+  kable()
+```
+
+\newpage
+```{r, warning=FALSE, message=FALSE}
+cox_fit1 %>%
+  gtsummary::tbl_regression(exp=TRUE)
+```
+
+
+
+\newpage
+# predict survival probability from cox model
+```{r}
+library(pec)
+#quantiles of survival times
+ttt=quantile(lung$DX_LASTCONTACT_DEATH_MONTHS)
+#for selected predictor variables
+testdata=test[,-c(1,2,4,10)]
+#predicting at each quantile, one column for each quantile, one row for each testing individual 
+pred=predictSurvProb(cph_fit, newdata=testdata, times=ttt) 
+```
+
+\newpage
+# cumulative Hazard vs Survival Probability
+```{r}
+surv100=survest(cph_fit)
+
+plot(surv100$surv,surv100$cumhaz, 
+     main = "Plot of Cum. Hazard vs Survival Probability",
+     xlab="survival", ylab = "Cum. Hazard")
+
+```
+
+
+# Smoothing of the Hazard Function - Non Parametric Survival
+```{r}
+# library(bshazard)
+# mod2<-bshazard(Surv(lung$DX_LASTCONTACT_DEATH_MONTHS,
+#                    lung$PUF_VITAL_STATUS) ~ 1, data=lung)
+# 
+# plot(mod2)
+```
+
+
+
+\newpage
+# predicting risks
+```{r}
+train$Chemo=relevel(as.factor(train$Chemo), ref="No Chemo")
+cox_fit2 <- coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~Chemo +
+                      AGE_cat+       
+                      SEX +                     
+                      CDCC_TOTAL_BEST  +         
+                      TUMOR_SIZE_cat  +          
+                      GRADE  +                 
+                      Visceral_Pleural_Invasion+ 
+                      LYMPH_VASCULAR_INVASION2+  
+                      Margins  +                
+                      Lymph_Nodes_Sampled +    
+                      Excision_less_than1, 
+                    data = train)
+#summary(cox_fit1)
+cox_fit2 %>%
+  gtsummary::tbl_regression(exp=TRUE)
+```
+\newpage
+# Predict 
+```{r}
+lp1=predict(cox_fit2, newdata=train, type="lp")#linear predictor ("lp") for each 8826 subjects
+
+#Train_Data
+riskscore1_train=predict(cox_fit2, newdata=train, type="risk")#the risk score exp(lp)
+hist(riskscore1_train)
+
+# Test_Data
+riskscore1_test=predict(cox_fit2, newdata=test, type="risk") #the risk score exp(lp)
+hist(riskscore1_test, xlim = c(0,2))
+
+#Entire Data
+riskscore1_all=predict(cox_fit2, newdata=lung, type="risk")#the risk score exp(lp)
+hist(riskscore1_all, xlim = c(0,2))
+
+#Density plot of scores
+# TRAIN_RISK <- data.frame(rs=riskscore1_train)
+# TEST_RISK <- data.frame(rs=riskscore1_test)
+ALL_DATA <- data.frame(rs=riskscore1_all)
+
+TRAIN_RISK$type<-'train'
+TEST_RISK$type<-'test'
+ALL_DATA$type<-'entire_data'
+
+ggplot(TEST_RISK, aes(rs, fill=type)) + geom_density(alpha = 0.2) 
+ggplot(TRAIN_RISK, aes(rs, fill=type)) + geom_density(alpha = 0.2) 
+
+datlen<-rbind(TRAIN_RISK,TEST_RISK,ALL_DATA)
+ggplot(datlen, aes(rs, fill=type)) + geom_density(alpha = 0.2)
+```
+
+\newpage
+```{r}
+#obtain hazard ratio for train data
+train$Chemo=relevel(as.factor(train$Chemo), ref="No Chemo")
+cox_fit3 <- coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~ Chemo, 
+                  data = train)
+cox_fit3 %>%
+  gtsummary::tbl_regression(exp=TRUE)
+
+hr3=exp(cox_fit2$coefficients) #HR for chemo therapy
+lphr3=predict(cox_fit2, train, type="lp") #predicted hazard ratio
+plot(riskscore1_train, lphr3)
+
+
+range(lphr3)
+range(1-lphr3)
+```
+
+\newpage
+```{r}
+plot(riskscore1_train, lphr3, ylab = "Hazard Ratio" ,
+     xlab="risk score", col="blue")
+
+abline(h=0, lty=2, lwd=2, col="red")
+abline(v=1, lwd=3, col="red")
+abline(v=v[2], lwd=3, col="snow3")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+***Comment***\n
+A positive HR indicates worse conditions/prognosis, while a negative coefficient indicates a better condition/prognosis.
+Riskscores > 1 shows increased hazards of mortality with multiple HRF.
+
+
+\newpage
+***Subtracting HR from 1 gives new scale of HR reads, where lower HR indicates worse conditions, and vice versa***
+```{r}
+plot(riskscore1_train, 1-lphr3, ylab = "Hazard Ratio" ,
+     xlab="Risk Score", col="blue")# ylim=c(0.6,1.6), xlim=c(0.6,1.6)
+
+abline(h=1, lty=2, lwd=2, col="red")
+abline(v=1, lwd=3, col="red")
+abline(v=v[2], lwd=3, col="snow3")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+
+
+\newpage
+```{r}
+plot(riskscore1_train, 1-lphr3, ylab = "Hazard Ratio",
+     xlab="risk score", col="blue", ylim=c(0.6,2))# ylim=c(0.6,1.6), xlim=c(0.6,1.6)
+#abline(v=quantile(riskscore1_train), lwd=3, col="red")
+abline(h=1, lty=2, lwd=2, col="red")
+#abline(v=riskscore1_train==1,lwd=3, col="green")
+abline(v=v[2], lwd=3, col="red")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+
+When risk score is > 1.3, a survival benefit from chemotherapy can be expected 
+as the risk score increases (i.e., multiple HRF present), survival
+decreases and the potential benefit from AC increases
+
+
+
+\newpage
+\section{The scatter plot of hazard ratio of chemo(reference:no chemo)versus risk score}
+```{r}
+#obtain hazard ratio for train data
+lung$Chemo=relevel(as.factor(lung$Chemo), ref="No Chemo")
+cox_fitchemo <-coxph(Surv(DX_LASTCONTACT_DEATH_MONTHS,PUF_VITAL_STATUS) ~ Chemo, 
+                  data = lung)
+cox_fitchemo %>%
+  gtsummary::tbl_regression(exp=TRUE)
+
+hr_chemo=exp(cox_fitchemo$coefficients) #HR for chemo therapy
+hr_chemo1=predict(cox_fitchemo, type="lp") #predicted hazard ratio
+plot(riskscore1_all, 1-hr_chemo1)
+
+range(hr_chemo1)
+range(hr_chemo)
+range(1-hr_chemo1)
+```
+
+\newpage
+```{r}
+plot(riskscore1_all, hr_chemo1, ylab = "Hazard Ratio" ,
+     xlab="risk score", col="blue")
+
+abline(h=0, lty=2, lwd=2, col="red")
+abline(v=1, lwd=3, col="red")
+abline(v=v[2], lwd=3, col="snow3")
+abline(v=v[1], lwd=3, col="snow3")
+abline(v=v[3], lwd=3, col="snow3")
+abline(v=v[4], lwd=3, col="snow3")
+```
+
+
+\newpage
+# Est.PH {survC1} - Derivation of a risk score by a Cox proportioal hazard model
+## Obtain Risk scores from the best predictors of mortality
+```{r}
+#Provides risk score by fitting data to a Cox's proportional hazards model with a given set of predictors
+# Input data. The 1st column should be time-to-event, and the 2nd column is event indicator (1=event, 0=censor). The rest of the columns are covariates/predictors used in the model. No character variable or missing is allowed. 
+#OUTPUT
+# beta = Estimates for regression coefficient in the Cox model
+# var = Variance-Covariance matrix for the beta above
+# rs 	= Risk score of each individual
+# ft 	= coxph object with the fitted model
+
+library(survC1)
+train1=train[,c(1:2)] #time & status
+
+train2 =train[, c(3:15)] # other covariates
+
+#convert other sub levels in all categorical covariates to integer
+p = data.frame(lapply(train2, as.integer))
+
+#combine numeric time & status with the numeric covariates
+train_data = data.frame(cbind(train1,p)) 
+
+#Make sure distribution of variables are not distorted after conversion
+require(inspectdf)
+show_plot(inspect_cat(train)) # inspect categorical columns 
+
+show_plot(inspect_num(train)) #inspect numeric columns 
+
+show_plot(inspect_num(train_data)) #inspect numeric columns 
+```
+
+```{r}
+#obtain risk scores for each individual
+rsmodel=Est.PH(train_data)
+riskscores=rsmodel$rs
+hist(riskscores)
+hist(sqrt(riskscores))
+#riskscores1 = 1 - riskscores
+```
+
+
+```{r}
+#obtain hazard rates
+coef=rsmodel$beta
+exp(coef)
+hist(sqrt(riskscores))
+#riskscores1 = 1 - riskscores
+```
+
+
+```{r}
+lphr3=predict(cox_fit3, train, type="lp") #predicted hazard ratio
+hrrr=1-lphr3
+```
+
+
+
+```{r}
+#baseline cumulative hazard function for all covariates set to zero(centered=False)
+bh=basehaz(cph_fit, centered=F)
+
+#plot baseline hazard vs time
+plot(bh$time, bh$hazard)
+#length(bh$hazard) #945
+```
+
+
+
+
+# predict linear predictors for test data 
+```{r, include=FALSE}
+#lp=linear predictors, betas x covariates for each observation
+lps=predict(cph_fit, test, type = "lp")
+length(lps) #1500
+
+#h_r= bh$hazard*(exp(lps)) #hazard_ratio
+#hr=exp(lps)
+
+#times of interest
+time_of_interest=test$DX_LASTCONTACT_DEATH_MONTHS
+
+
+#calculate the risk of event from the baseline hazard and linear predictors which returns a vector of probabilities for each person in the data.
+sur=exp(-bh[time_of_interest,1])^exp(lps)
+ri=1-sur;ri
+#event_prob_t1=1-exp(-bh[time_of_interest,1])^exp(lps)
+```
+
+
+
+# cumulative incidence plot
+<!-- cumulative incidence, also called incidence proportion, in epidemiology, estimate of the risk that an individual will experience an event or develop a disease during a specified period of time. Cumulative incidence is calculated as the number of new events or cases of disease divided by the total number of individuals in the population at risk for a specific time interval. Researchers can use cumulative incidence to predict risk of a disease or event over short or long periods of time. -->
+
+<!-- McNutt, Louise-Anne and Krug, Allison. "cumulative incidence". Encyclopedia Britannica, Invalid Date, https://www.britannica.com/science/cumulative-incidence. Accessed 28 June 2022.  -->
+
+```{r}
+library(cmprsk)
+s=cuminc(lung$DX_LASTCONTACT_DEATH_MONTHS, lung$PUF_VITAL_STATUS, cencode=1)
+plot(s)
+e=as.matrix(s)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

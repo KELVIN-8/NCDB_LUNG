@@ -31,7 +31,7 @@ header-includes:
 ---
 \newpage
 \section{Loading Data and Preparations}
-```{r setup, include=FALSE}
+```{r setup}
 lung<-read.csv("lung_data2.csv") #predictors of mortality
 
 ```
@@ -236,7 +236,8 @@ abline(v=v[4], lwd=3, col="snow3")
 ```
 ***Subtracting HR from 1 gives reverse scale of HR reads, where lower HR indicates worse conditions, higher HR indicates better prognosis***\newline
 As risk score increases, the hazard ratio gets worse (bad prognosis).
-A survival benefit from adjuvant chemotherapy is realised when the risk score is < 1  at which point the hazard ratio of mortality appears to be better.
+A survival benefit from adjuvant chemotherapy is realised when the risk score is < 1  at which point the hazard ratio of mortality appears to be better.\newline 
+***Note the reverse reading of the Hazard ratio scale.***
 
 
 

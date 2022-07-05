@@ -146,54 +146,7 @@
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{Chemo}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{Chemo, }
-                     \AttributeTok{levels=}\FunctionTok{c}\NormalTok{(}\StringTok{"No Chemo"}\NormalTok{, }\StringTok{"Chemo"}\NormalTok{),}
-                     \AttributeTok{labels=}\FunctionTok{c}\NormalTok{(}\StringTok{"No Chemo"}\NormalTok{, }\StringTok{"Chemo"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{AGE\_cat}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{AGE\_cat, }
-                     \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"50{-}60"}\NormalTok{, }\StringTok{"60{-}70"}\NormalTok{, }\StringTok{"70{-}80"}\NormalTok{, }\StringTok{"Above 80"}\NormalTok{, }\StringTok{"Below 50"}\NormalTok{),}
-                     \AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"50{-}60"}\NormalTok{, }\StringTok{"60{-}70"}\NormalTok{, }\StringTok{"70{-}80"}\NormalTok{, }\StringTok{"Above 80"}\NormalTok{, }\StringTok{"Below 50"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{SEX}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{SEX,}
-                   \AttributeTok{levels=}\FunctionTok{c}\NormalTok{(}\StringTok{"Female"}\NormalTok{, }\StringTok{"Male"}\NormalTok{),}
-                   \AttributeTok{labels=}\FunctionTok{c}\NormalTok{(}\StringTok{"Female"}\NormalTok{, }\StringTok{"Male"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{CDCC\_TOTAL\_BEST}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{CDCC\_TOTAL\_BEST,}
-                             \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"0"}\NormalTok{,}\StringTok{"1"}\NormalTok{,}\StringTok{"2"}\NormalTok{,}\StringTok{"3"}\NormalTok{),}
-                             \AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"0"}\NormalTok{,}\StringTok{"1"}\NormalTok{,}\StringTok{"2"}\NormalTok{,}\StringTok{"3"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{TUMOR\_SIZE\_cat}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{TUMOR\_SIZE\_cat,}
-                            \AttributeTok{levels=}\FunctionTok{c}\NormalTok{(}\StringTok{"\textless{}=1cm"}\NormalTok{,}\StringTok{"1cm{-}2cm"}\NormalTok{,}\StringTok{"2cm{-}3cm"}\NormalTok{,}\StringTok{"3cm{-}4cm"}\NormalTok{,}\StringTok{"4cm{-}5cm"}\NormalTok{),}
-                            \AttributeTok{labels=}\FunctionTok{c}\NormalTok{(}\StringTok{"\textless{}=1cm"}\NormalTok{,}\StringTok{"1cm{-}2cm"}\NormalTok{,}\StringTok{"2cm{-}3cm"}\NormalTok{,}\StringTok{"3cm{-}4cm"}\NormalTok{,}\StringTok{"4cm{-}5cm"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{GRADE}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{GRADE,}
-                   \AttributeTok{levels=}\FunctionTok{c}\NormalTok{(}\StringTok{"Moderately differentiated"}\NormalTok{,}\StringTok{"Poorly differentiated"}\NormalTok{, }\StringTok{"Undifferentiated"}\NormalTok{,}\StringTok{"Unknown"}\NormalTok{,}\StringTok{"Well differentiated"}\NormalTok{),}
-                   \AttributeTok{labels=}\FunctionTok{c}\NormalTok{(}\StringTok{"Moderately differentiated"}\NormalTok{,}\StringTok{"Poorly differentiated"}\NormalTok{, }\StringTok{"Undifferentiated"}\NormalTok{,}\StringTok{"Unknown"}\NormalTok{, }\StringTok{"Well differentiated"}\NormalTok{ ))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{Pathology}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{Pathology,}
-                       \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Adenocarcinoma"}\NormalTok{,}\StringTok{"Other"}\NormalTok{, }\StringTok{"Squamous"}\NormalTok{),}
-                       \AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Adenocarcinoma"}\NormalTok{,}\StringTok{"Other"}\NormalTok{, }\StringTok{"Squamous"}\NormalTok{))}
-
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{Visceral\_Pleural\_Invasion}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{Visceral\_Pleural\_Invasion,}
-                                       \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Other"}\NormalTok{, }\StringTok{"Present"}\NormalTok{),}
-                                       \AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Other"}\NormalTok{, }\StringTok{"Present"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{LYMPH\_VASCULAR\_INVASION2}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{LYMPH\_VASCULAR\_INVASION2,}
-                                      \AttributeTok{levels=}\FunctionTok{c}\NormalTok{(}\StringTok{"Absent"}\NormalTok{, }\StringTok{"Present"}\NormalTok{, }\StringTok{"Unknown"}\NormalTok{),}
-                                      \AttributeTok{labels=}\FunctionTok{c}\NormalTok{(}\StringTok{"Absent"}\NormalTok{, }\StringTok{"Present"}\NormalTok{, }\StringTok{"Unknown"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{Margins}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{Margins,}
-                     \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Other"}\NormalTok{,}\StringTok{"Positive"}\NormalTok{,}\StringTok{"Zero"}\NormalTok{),}
-                     \AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Other"}\NormalTok{,}\StringTok{"Positive"}\NormalTok{,}\StringTok{"Zero"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{Lymph\_Nodes\_Sampled}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{Lymph\_Nodes\_Sampled,}
-                                 \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"\textless{}10"}\NormalTok{,}\StringTok{"\textgreater{}=10"}\NormalTok{, }\StringTok{"Unknown"}\NormalTok{),}
-                                 \AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"\textless{}10"}\NormalTok{,}\StringTok{"\textgreater{}=10"}\NormalTok{, }\StringTok{"Unknown"}\NormalTok{))}
-
-\NormalTok{lung}\SpecialCharTok{$}\NormalTok{Excision\_less\_than1}\OtherTok{\textless{}{-}}\FunctionTok{factor}\NormalTok{(lung}\SpecialCharTok{$}\NormalTok{Excision\_less\_than1,}
-                                 \AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"FALSE"}\NormalTok{,}\StringTok{"TRUE"}\NormalTok{),}
-                                 \AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"FALSE"}\NormalTok{, }\StringTok{"TRUE"}\NormalTok{))}
+\NormalTok{lung}\OtherTok{\textless{}{-}}\FunctionTok{read.csv}\NormalTok{(}\StringTok{"lung\_data2.csv"}\NormalTok{) }\CommentTok{\#predictors of mortality}
 \end{Highlighting}
 \end{Shaded}
 
@@ -638,7 +591,8 @@ where lower HR indicates worse conditions, higher HR indicates better
 prognosis}}\newline As risk score increases, the hazard ratio gets worse
 (bad prognosis). A survival benefit from adjuvant chemotherapy is
 realised when the risk score is \textless{} 1 at which point the hazard
-ratio of mortality appears to be better.
+ratio of mortality appears to be better.\newline  \textbf{\emph{Note the
+reverse reading of the Hazard ratio scale.}}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 

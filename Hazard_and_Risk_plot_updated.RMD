@@ -87,7 +87,6 @@ lung$Excision_less_than1<-factor(lung$Excision_less_than1,
                                  labels = c("FALSE", "TRUE"))
 ```
 
-\newpage
 \subsection{Partition Data}
 ```{r, warning=FALSE, message=FALSE}
 require(caTools)

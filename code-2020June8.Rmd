@@ -1473,7 +1473,7 @@ length(bh$hazard) #945
 lps=predict(cph_fit_chemo, NCDB_lung2, type = "lp") #lp=linear predictors, betas x covariates for each observation
 length(lps) #10325
 h_r= bh$hazard*(exp(lps)) #hazard_ratio
-hr=exp(lps)
+hr=exp(lps) #hazard ratio
 time_of_interest=NCDB_lung2$DX_LASTCONTACT_DEATH_MONTHS #survival at time 6
 # i_time_of_interest = match(1, round(bh$time, 1)==time_of_interest, 
 #                            nomatch = -100)
